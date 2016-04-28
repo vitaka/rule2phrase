@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<actions>
+        <action>
+            <actionName>run</actionName>
+            <goals>
+                <goal>process-classes</goal>
+                <goal>org.codehaus.mojo:exec-maven-plugin:1.1.1:exec</goal>
+            </goals>
+            <properties>
+                <exec.classpathScope>runtime</exec.classpathScope>
+                <exec.args>-classpath %classpath es.ua.dlsi.hybridmt.apertiumphrasegenerator.Main --lexforms /home/vmsanchez/Dropbox/experimentos-hybrid/expandPT/filteredLexicalFormsNews --generate --rules /home/vmsanchez/Dropbox/experimentos-hybrid/expandPT/apertium-en-es.es-en.t1x --trie /home/vmsanchez/Dropbox/experimentos-hybrid/expandPT/filterNGramsNews</exec.args>
+                <exec.executable>java</exec.executable>
+            </properties>
+        </action>
+        <action>
+            <actionName>debug</actionName>
+            <goals>
+                <goal>process-classes</goal>
+                <goal>org.codehaus.mojo:exec-maven-plugin:1.1.1:exec</goal>
+            </goals>
+            <properties>
+                <exec.classpathScope>runtime</exec.classpathScope>
+                <exec.args>-Xdebug -Xrunjdwp:transport=dt_socket,server=n,address=${jpda.address} -classpath %classpath es.ua.dlsi.hybridmt.apertiumphrasegenerator.Main --lexforms /home/vmsanchez/Dropbox/experimentos-hybrid/expandPT/filteredLexicalFormsNews --generate --rules /home/vmsanchez/Dropbox/experimentos-hybrid/expandPT/apertium-en-es.es-en.t1x --trie /home/vmsanchez/Dropbox/experimentos-hybrid/expandPT/filterNGramsNews</exec.args>
+                <jpda.listen>true</jpda.listen>
+                <exec.executable>java</exec.executable>
+            </properties>
+        </action>
+        <action>
+            <actionName>profile</actionName>
+            <goals>
+                <goal>process-classes</goal>
+                <goal>org.codehaus.mojo:exec-maven-plugin:1.1.1:exec</goal>
+            </goals>
+            <properties>
+                <exec.args>${profiler.args} -classpath %classpath es.ua.dlsi.hybridmt.apertiumphrasegenerator.Main --lexforms /home/vmsanchez/Dropbox/experimentos-hybrid/expandPT/filteredLexicalFormsNews --generate --rules /home/vmsanchez/Dropbox/experimentos-hybrid/expandPT/apertium-en-es.es-en.t1x --trie /home/vmsanchez/Dropbox/experimentos-hybrid/expandPT/filterNGramsNews</exec.args>
+                <profiler.action>profile</profiler.action>
+                <exec.executable>${profiler.java}</exec.executable>
+            </properties>
+        </action>
+        <action>
+            <actionName>CUSTOM-Assembly</actionName>
+            <displayName>Assembly</displayName>
+            <goals>
+                <goal>assembly:assembly</goal>
+            </goals>
+        </action>
+    </actions>

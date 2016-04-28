@@ -1,0 +1,89 @@
+#INPUT VARIABLES:
+
+#SL
+#TL
+#PREFIX
+#APERTIUMPAIR
+#SOURCEDICT_FILE
+#TARGETDICT_FILE
+#MOSESDIR
+#FASTALIGNDIR
+#PRINTTLMORPH
+
+#LEARNEDRULESFLAG
+
+#Configuration variables: we usually don't change them
+PREFIXFILTERING=""
+ALIGNMENTS:=yes
+DUPDETERMINED:=dupdetermined
+
+
+APERTIUMSCRIPTSDIR=./apertium-scripts
+DIRDETDICT=$(DIRSYNTH)/dictionary
+DIRDETDICTNORULES=$(DIRSYNTH)/dictionary-norules
+APERTIUMBINDIR=$(PREFIX)/bin
+MYSCRIPTSDIR:=$(APERTIUMSCRIPTSDIR)
+
+TOKENIZER_SL:=$(MOSESDIR)/scripts/tokenizer/normalize-punctuation.perl | $(MOSESDIR)/scripts/tokenizer/tokenizer.perl -l $(SL)
+TOKENIZER_TL:=$(MOSESDIR)/scripts/tokenizer/normalize-punctuation.perl | $(MOSESDIR)/scripts/tokenizer/tokenizer.perl -l $(TL)
+
+TRUECASESL:=$(MOSESDIR)/scripts/recaser/truecase.perl --model $(PAR_TRUECASER_MODEL_SL)
+TRUECASETL:=$(MOSESDIR)/scripts/recaser/truecase.perl --model $(PAR_TRUECASER_MODEL_TL)
+
+
+.PHONY: all
+
+all: $(DIRDETDICT)/dictcorpus.$(SL) $(DIRSYNTH)/lemmas-src/lemmas.gz $(DIRSYNTH)/lemmas-target/multiwords $(DIRSYNTH)/lexicalForms $(DIRSYNTH)/fastalign.fwd_params $(DIRSYNTH)/fastalign.rev_params $(DIRSYNTH)/moses-model/model/lex.e2f
+
+
+
+$(DIRSYNTH)/lemmas-src/lemmas.gz:
+	@echo "Extracting src lemmas (corpus-independent)"
+	@echo "----------------------"
+	mkdir -p $(DIRSYNTH)/lemmas-src
+	$(MYSCRIPTSDIR)/extractLemmasAndPOS.sh $(APERTIUMBINDIR) $(SOURCEDICT_FILE) $(DIRSYNTH)/lemmas-src $(MYSCRIPTSDIR)
+
+$(DIRSYNTH)/lemmas-target/multiwords:
+	@echo "Extracting target lemmas (corpus-independent)"
+	@echo "----------------------"
+	mkdir -p $(DIRSYNTH)/lemmas-target
+	$(MYSCRIPTSDIR)/extractLemmasAndPOS.sh $(APERTIUMBINDIR) $(TARGETDICT_FILE) $(DIRSYNTH)/lemmas-target $(MYSCRIPTSDIR) generation
+
+$(DIRSYNTH)/lexicalForms $(DIRSYNTH)/splittwords: $(DIRSYNTH)/lemmas-src/lemmas.gz
+	@echo "Applying pretransfer to generate lexical forms (corpus-independent)"
+	@echo "----------------------"
+	zcat $? | python $(MYSCRIPTSDIR)/applyPretransfer.py $(DIRSYNTH)/splittwords $(SL) $(TL) 2> $(DIRSYNTH)/applyPretransfer.log | LC_ALL=C  sort -u >$(DIRSYNTH)/lexicalForms
+
+
+$(DIRDETDICT)/dictcorpus.$(SL) $(DIRDETDICT)/dictcorpus.$(TL) $(DIRDETDICT)/dictcorpus.als: $(DIRSYNTH)/lemmas-target/multiwords
+	@echo "Generating bilingual corpus from dictionary (corpus independent)"
+	@echo "----------------------"
+	$(MYSCRIPTSDIR)/generateCorpusFromDictionary.sh $(SL) $(TL) $(APERTIUMPAIR) "$(DIRDETDICT)" "$(SOURCEDICT_FILE)" "$(APERTIUMBINDIR)" "$(MYSCRIPTSDIR)" "$(TOKENIZER_SL);$(TOKENIZER_TL)" "$(DIRSYNTH)/lemmas-target/multiwords" "$(DUPDETERMINED)" "" "$(LEARNEDRULESFLAG)" "$(TRUECASESL)" "$(TRUECASETL)" "$(PRINTTLMORPH)"
+	@echo ""
+
+$(DIRDETDICTNORULES)/dictcorpus.$(SL) $(DIRDETDICTNORULES)/dictcorpus.$(TL) $(DIRDETDICTNORULES)/dictcorpus.als: $(DIRSYNTH)/lemmas-target/multiwords
+	@echo "Generating bilingual corpus from dictionary (no rules)"
+	@echo "----------------------"
+	$(MYSCRIPTSDIR)/generateCorpusFromDictionary.sh $(SL) $(TL) $(APERTIUMPAIR) "$(DIRDETDICTNORULES)" "$(SOURCEDICT_FILE)" "$(APERTIUMBINDIR)" "$(MYSCRIPTSDIR)" "$(TOKENIZER_SL);$(TOKENIZER_TL)" "$(DIRSYNTH)/lemmas-target/multiwords" "$(DUPDETERMINED)" "empty" "$(LEARNEDRULESFLAG)" "$(TRUECASESL)" "$(TRUECASETL)"
+	@echo ""
+
+$(DIRSYNTH)/fastalign.fwd_params: $(DIRDETDICT)/dictcorpus.$(SL) $(DIRDETDICT)/dictcorpus.$(TL)
+	@echo "Computing fastalign model fwd"
+	@echo "----------------------"
+	paste $(DIRDETDICT)/dictcorpus.$(SL) $(DIRDETDICT)/dictcorpus.$(TL) | awk -F'\t' '{print $$1 " ||| " $$2}' > $(DIRSYNTH)/fastalign.input.fwd
+	$(FASTALIGNDIR)/fast_align -i $(DIRSYNTH)/fastalign.input.fwd -d -v -o -p $(DIRSYNTH)/fastalign.fwd_params >$(DIRSYNTH)/fastalign.fwd_als 2>$(DIRSYNTH)/fastalign.fwd_err
+
+$(DIRSYNTH)/fastalign.rev_params: $(DIRSYNTH)/fastalign.fwd_params
+	@echo "Computing fastalign model rev"
+	@echo "----------------------"
+	$(FASTALIGNDIR)/fast_align -i $(DIRSYNTH)/fastalign.input.fwd -r -d -v -o -p $(DIRSYNTH)/fastalign.rev_params >$(DIRSYNTH)/fastalign.rev_als 2>$(DIRSYNTH)/fastalign.rev_err
+
+$(DIRSYNTH)/moses-model/model/lex.e2f $(DIRSYNTH)/moses-model/model/lex.f2e: $(DIRSYNTH)/fastalign.fwd_params $(DIRSYNTH)/fastalign.rev_params
+	@echo "Computing lexical translation model"
+	@echo "---------------------------------"
+	mkdir -p $(DIRSYNTH)/moses-model/model
+	$(FASTALIGNDIR)/atools -i $(DIRSYNTH)/fastalign.fwd_als -j $(DIRSYNTH)/fastalign.rev_als -c grow-diag-final-and > $(DIRSYNTH)/moses-model/model/aligned.grow-diag-final-and
+	mkdir -p $(DIRSYNTH)/moses-model/corpus
+	ln -s $(DIRDETDICT)/dictcorpus.$(SL) $(DIRSYNTH)/moses-model/corpus/corpus.$(SL)
+	ln -s $(DIRDETDICT)/dictcorpus.$(TL) $(DIRSYNTH)/moses-model/corpus/corpus.$(TL)
+	$(MOSESDIR)/scripts/training/train-model.perl --root-dir $(DIRSYNTH)/moses-model --corpus $(DIRSYNTH)/moses-model/corpus/corpus --f $(SL) --e $(TL) --alignment grow-diag-final-and --first-step 4 --last-step 4
